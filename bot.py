@@ -112,7 +112,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(get_t(user_id, "select_lang"), reply_markup=get_language_keyboard(), parse_mode="Markdown")
         return
 
-    await query.message.reply_text(msg, parse_mode="Markdown")
+    await query.message.reply_text(msg, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -128,9 +128,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_histories[user_id] = user_histories[user_id][-10:]
 
     if current_state == "arabic_summary":
-        system_content = "You are a professional text summarizer. Provide a clear, concise summary of the text provided by the user entirely in Arabic language."
+        system_content = "You are a professional text summarizer. Provide a clear, concise summary of the text provided by the user entirely and strictly in Arabic language."
     elif current_state == "key_points":
-        system_content = "You are a professional text summarizer. Extract the main key points of the text provided by line-by-line bullet points in English."
+        system_content = "You are a professional text summarizer. Extract the main key points of the text provided in clear bullet points in English."
     else:
         system_content = "You are a professional text summarizer. Provide a quick, clear, and concise summary of the text provided by the user in English."
 
@@ -147,12 +147,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = response.choices[0].message.content
         if reply:
             user_histories[user_id].append({"role": "assistant", "content": reply})
-            await update.message.reply_text(reply)
+            # هنا التعديل: إرسال النتيجة ومعها القائمة والأزرار تلقائياً من غير ما تحتاج تدوس ستارت
+            await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         else:
-            await update.message.reply_text("⚠️ No response generated.")
+            await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
     except Exception as e:
         logger.error(f"AI Error: {e}")
-        await update.message.reply_text(f"حدث خطأ: {str(e)}")
+        await update.message.reply_text(f"حدث خطأ: {str(e)}", reply_markup=get_main_keyboard(user_id))
 
 def main():
     if not TELEGRAM_TOKEN:
