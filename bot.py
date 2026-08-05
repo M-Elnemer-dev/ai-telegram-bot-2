@@ -34,8 +34,7 @@ TRANSLATIONS = {
         "arabic_summary": "🌐 Arabic Summary",
         "arabic_summary_text": "🌐 **Arabic Summary Mode Activated:** Send your text for an Arabic summary.",
         "change_lang": "🌐 Change UI Language",
-        "select_lang": "🌐 **Select Language / اختر اللغة:**",
-        "contact_success": "✅ **Your message has been sent to the developer!**"
+        "select_lang": "🌐 **Select Language / اختر اللغة:**"
     },
     "en": {
         "welcome": "🤖 **Welcome to the AI Document & Text Summarizer!** 📄\n\nDefault Language: English 🇺🇸\nSend a text, PDF, or Word file to summarize!",
@@ -46,8 +45,7 @@ TRANSLATIONS = {
         "arabic_summary": "🌐 Arabic Summary",
         "arabic_summary_text": "🌐 **Arabic Summary Mode Activated:** Send your text for an Arabic summary.",
         "change_lang": "🌐 Change UI Language",
-        "select_lang": "🌐 **Select Language:**",
-        "contact_success": "✅ **Your message has been sent to the developer!**"
+        "select_lang": "🌐 **Select Language:**"
     }
 }
 
@@ -83,7 +81,7 @@ def get_language_keyboard():
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_states[user_id] = None
+    user_states[user_id] = "quick_summary"
     user_histories[user_id] = []
     
     text = get_t(user_id, "welcome")
@@ -102,10 +100,13 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "quick_summary":
+        user_states[user_id] = "quick_summary"
         msg = get_t(user_id, "quick_summary_text")
     elif query.data == "key_points":
+        user_states[user_id] = "key_points"
         msg = get_t(user_id, "key_points_text")
     elif query.data == "arabic_summary":
+        user_states[user_id] = "arabic_summary"
         msg = get_t(user_id, "arabic_summary_text")
     elif query.data == "change_lang":
         await query.message.reply_text(get_t(user_id, "select_lang"), reply_markup=get_language_keyboard(), parse_mode="Markdown")
@@ -115,7 +116,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    lang = user_languages.get(user_id, "en")
+    current_state = user_states.get(user_id, "quick_summary")
 
     if is_rate_limited(user_id):
         await update.message.reply_text("⚠️ Rate limit reached.")
@@ -126,8 +127,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(user_histories[user_id]) > 10:
         user_histories[user_id] = user_histories[user_id][-10:]
 
+    if current_state == "arabic_summary":
+        system_content = "You are a professional text summarizer. Provide a clear, concise summary of the text provided by the user entirely in Arabic language."
+    elif current_state == "key_points":
+        system_content = "You are a professional text summarizer. Extract the main key points of the text provided by line-by-line bullet points in English."
+    else:
+        system_content = "You are a professional text summarizer. Provide a quick, clear, and concise summary of the text provided by the user in English."
+
     messages = [
-        {"role": "system", "content": f"You are a professional text summarizer. Provide a clear, concise summary of the text provided by the user in '{lang}' language."}
+        {"role": "system", "content": system_content}
     ] + user_histories[user_id]
 
     try:
