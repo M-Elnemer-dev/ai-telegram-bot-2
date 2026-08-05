@@ -40,7 +40,7 @@ UI_TEXTS = {
         "deep": "🧠 Deep Analysis",
         "error": "⚠️ An error occurred while generating the response.",
         "unsupported": "⚠️ Unsupported file format.",
-        "photo_not_supported": "⚠️ Images are not supported. Please send text or documents (PDF, Word, TXT) only."
+        "photo_not_supported": "⚠️ Images are not supported. Please send text or documents only."
     },
     "ar": {
         "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً أو مستنداً (PDF, Word, TXT):",
@@ -57,7 +57,7 @@ UI_TEXTS = {
         "deep": "🧠 تحليل متعمق",
         "error": "⚠️ حدث خطأ أثناء توليد الرد من الذكاء الاصطناعي.",
         "unsupported": "⚠️ صيغة الملف غير مدعومة.",
-        "photo_not_supported": "⚠️ الصور غير مدعومة في هذا البوت. يجوز إرسال النصوص أو المستندات (PDF و Word و TXT) فقط."
+        "photo_not_supported": "⚠️ الصور غير مدعومة. يرسل النصوص أو المستندات فقط."
     },
     "fr": {
         "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄",
@@ -74,14 +74,14 @@ UI_TEXTS = {
         "deep": "🧠 Analyse Approfondie",
         "error": "⚠️ Une erreur s'est produite.",
         "unsupported": "⚠️ Format non pris en charge.",
-        "photo_not_supported": "⚠️ Les images ne sont pas prises en charge."
+        "photo_not_supported": "⚠️ Images non prises en charge."
     },
     "de": {
         "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄",
         "mode_btn": "⚙️ Modus",
         "lang_btn": "🌐 Sprache",
         "select_mode": "📌 **Wählen Sie den Modus:**",
-        "select_lang": "📌 **Wählen Sie die Sprache:**",
+        "select_lang": "🌐 **Wählen Sie die Sprache:**",
         "back": "🔙 Zurück",
         "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
         "send_text": "Senden Sie Text oder Dokument:",
@@ -91,7 +91,7 @@ UI_TEXTS = {
         "deep": "🧠 Tiefenanalyse",
         "error": "⚠️ Ein Fehler ist aufgetreten.",
         "unsupported": "⚠️ Nicht unterstütztes Format.",
-        "photo_not_supported": "⚠️ Bilder werden nicht unterstützt."
+        "photo_not_supported": "⚠️ Bilder nicht unterstützt."
     }
 }
 
@@ -236,14 +236,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     document = update.message.document
     file_name = document.file_name.lower()
     
-    file_bytes = await document.get_file()
-    file_io = io.BytesIO()
-    await file_bytes.download_to_memory(file_io)
-    file_io.seek(0)
-    
-    extracted_text = ""
-    
     try:
+        file_bytes = await document.get_file()
+        file_io = io.BytesIO()
+        await file_bytes.download_to_memory(file_io)
+        file_io.seek(0)
+        
+        extracted_text = ""
+        
         if file_name.endswith('.pdf'):
             reader = PyPDF2.PdfReader(file_io)
             for page in reader.pages:
@@ -255,6 +255,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for para in doc.paragraphs:
                 if para.text:
                     extracted_text += para.text + "\n"
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text:
+                            extracted_text += cell.text + " "
+                    extracted_text += "\n"
         elif file_name.endswith('.txt'):
             extracted_text = file_io.read().decode('utf-8', errors='ignore')
         else:
@@ -268,7 +274,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         logger.error(f"File reading error: {e}")
-        await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
+        await update.message.reply_text(f"{get_t(lang_code, 'error')}\n`{str(e)}`", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -301,5 +307,5 @@ def main():
 
     app.run_polling()
 
-if __name__ == '__main__':
+if __name__ == main.__globals__.get('__name__', '__main__'):
     main()
