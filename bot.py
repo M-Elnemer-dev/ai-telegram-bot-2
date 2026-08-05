@@ -8,8 +8,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from g4f.client import Client
 import PyPDF2
 from docx import Document
-from PIL import Image
-import pytesseract
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -28,38 +26,38 @@ RATE_LIMIT_WINDOW = 10
 
 UI_TEXTS = {
     "en": {
-        "welcome": "🤖 **Welcome to the AI Summarizer Bot!** 📄\n\nSend text, documents, or images:",
+        "welcome": "🤖 **Welcome to the AI Summarizer Bot!** 📄\n\nSend text or documents (PDF, Word, TXT):",
         "mode_btn": "⚙️ Mode",
         "lang_btn": "🌐 Lang",
         "select_mode": "📌 **Select Summary Mode:**",
         "select_lang": "🌐 **Select Output Language:**",
         "back": "🔙 Back",
         "settings_updated": "⚙️ **Settings Updated:**",
-        "send_text": "Send your text, document, or image now:",
+        "send_text": "Send your text or document now:",
         "loading": "⏳ **Processing your request, please wait...**",
         "quick": "⚡ Quick Summary",
         "points": "📌 Key Points",
         "deep": "🧠 Deep Analysis",
         "error": "⚠️ An error occurred while generating the response.",
         "unsupported": "⚠️ Unsupported file format.",
-        "ocr_error": "⚠️ Could not extract text from this image. Please try sending text directly or a clearer image."
+        "photo_not_supported": "⚠️ Images are not supported. Please send text or documents (PDF, Word, TXT) only."
     },
     "ar": {
-        "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً، أو ملفاً، أو صورة:",
+        "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً أو مستنداً (PDF, Word, TXT):",
         "mode_btn": "⚙️ الوضع",
         "lang_btn": "🌐 اللغة",
         "select_mode": "📌 **اختر نوع التلخيص:**",
         "select_lang": "🌐 **اختر لغة الإخراج:**",
         "back": "🔙 رجوع",
         "settings_updated": "⚙️ **تم تحديث الإعدادات:**",
-        "send_text": "أرسل النص أو المستند أو الصورة الآن للتلخيص:",
+        "send_text": "أرسل النص أو المستند الآن للتلخيص:",
         "loading": "⏳ **جاري معالجة طلبك، برجاء الانتظار...**",
         "quick": "⚡ تلخيص سريع",
         "points": "📌 نقاط رئيسية",
         "deep": "🧠 تحليل متعمق",
         "error": "⚠️ حدث خطأ أثناء توليد الرد من الذكاء الاصطناعي.",
         "unsupported": "⚠️ صيغة الملف غير مدعومة.",
-        "ocr_error": "⚠️ عذراً، لم أستطع قراءة نصوص واضحة من هذه الصورة بسبب تداخل الخطوط. من فضلك اكتب النص مباشرة وسأقوم بتلخيصه لك فوراً!"
+        "photo_not_supported": "⚠️ الصور غير مدعومة في هذا البوت. يجوز إرسال النصوص أو المستندات (PDF و Word و TXT) فقط."
     },
     "fr": {
         "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄",
@@ -69,14 +67,14 @@ UI_TEXTS = {
         "select_lang": "📌 **Sélectionnez la langue de sortie:**",
         "back": "🔙 Retour",
         "settings_updated": "⚙️ **Paramètres mis à jour:**",
-        "send_text": "Envoyez votre texte, document ou image:",
+        "send_text": "Envoyez votre texte ou document:",
         "loading": "⏳ **Traitement en cours...**",
         "quick": "⚡ Résumé Rapide",
         "points": "📌 Points Clés",
         "deep": "🧠 Analyse Approfondie",
         "error": "⚠️ Une erreur s'est produite.",
         "unsupported": "⚠️ Format non pris en charge.",
-        "ocr_error": "⚠️ Impossible d'extraire le texte."
+        "photo_not_supported": "⚠️ Les images ne sont pas prises en charge."
     },
     "de": {
         "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄",
@@ -86,14 +84,14 @@ UI_TEXTS = {
         "select_lang": "📌 **Wählen Sie die Sprache:**",
         "back": "🔙 Zurück",
         "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
-        "send_text": "Senden Sie Text, Dokument oder Bild:",
+        "send_text": "Senden Sie Text oder Dokument:",
         "loading": "⏳ **Ihre Anfrage wird bearbeitet...**",
         "quick": "⚡ Schnelle Zusammenfassung",
         "points": "📌 Kernpunkte",
         "deep": "🧠 Tiefenanalyse",
         "error": "⚠️ Ein Fehler ist aufgetreten.",
         "unsupported": "⚠️ Nicht unterstütztes Format.",
-        "ocr_error": "⚠️ Text konnte nicht extrahiert werden."
+        "photo_not_supported": "⚠️ Bilder werden nicht unterstützt."
     }
 }
 
@@ -276,31 +274,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     s = user_settings[user_id]
     lang_code = s["lang"]
-
-    photo = update.message.photo[-1]
-    photo_file = await photo.get_file()
-    
-    photo_io = io.BytesIO()
-    await photo_file.download_to_memory(photo_io)
-    photo_io.seek(0)
-
-    try:
-        image = Image.open(photo_io)
-        extracted_text = pytesseract.image_to_string(image)
-
-        if extracted_text and len(extracted_text.strip()) > 5:
-            await process_content(update, context, f"Here is the text extracted from an image:\n{extracted_text}")
-        else:
-            await update.message.reply_text(
-                get_t(lang_code, "ocr_error"),
-                reply_markup=get_main_keyboard(user_id)
-            )
-    except Exception as e:
-        logger.error(f"OCR Error: {e}")
-        await update.message.reply_text(
-            get_t(lang_code, "ocr_error"),
-            reply_markup=get_main_keyboard(user_id)
-        )
+    await update.message.reply_text(get_t(lang_code, "photo_not_supported"), reply_markup=get_main_keyboard(user_id))
 
 def is_rate_limited(user_id: int) -> bool:
     current_time = time.time()
