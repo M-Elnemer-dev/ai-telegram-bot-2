@@ -17,74 +17,30 @@ ADMIN_ID = os.getenv("ADMIN_CHAT_ID")
 
 g4f_client = Client()
 
-user_languages = {}
-user_states = {}
+user_settings = defaultdict(lambda: {"mode": "quick", "lang": "en"})
 user_histories = defaultdict(list)
 user_message_times = defaultdict(list)
 RATE_LIMIT_COUNT = 5
 RATE_LIMIT_WINDOW = 10
 
-TRANSLATIONS = {
-    "ar": {
-        "welcome": "🤖 **Welcome to the AI Document & Text Summarizer!** 📄\n\nDefault Language: English 🇺🇸\nSend a text, PDF, or Word file to summarize!",
-        "quick_summary": "⚡ Quick Summary",
-        "quick_summary_text": "⚡ **Quick Summary Mode Activated:** Send your text to get a fast summary.",
-        "key_points": "📌 Key Points",
-        "key_points_text": "📌 **Key Points Mode Activated:** Send your text to extract main points.",
-        "arabic_summary": "🌐 Arabic Summary",
-        "arabic_summary_text": "🌐 **Arabic Summary Mode Activated:** Send your text for an Arabic summary.",
-        "change_lang": "🌐 Change UI Language",
-        "select_lang": "🌐 **Select Language / اختر اللغة:**"
-    },
-    "en": {
-        "welcome": "🤖 **Welcome to the AI Document & Text Summarizer!** 📄\n\nDefault Language: English 🇺🇸\nSend a text, PDF, or Word file to summarize!",
-        "quick_summary": "⚡ Quick Summary",
-        "quick_summary_text": "⚡ **Quick Summary Mode Activated:** Send your text to get a fast summary.",
-        "key_points": "📌 Key Points",
-        "key_points_text": "📌 **Key Points Mode Activated:** Send your text to extract main points.",
-        "arabic_summary": "🌐 Arabic Summary",
-        "arabic_summary_text": "🌐 **Arabic Summary Mode Activated:** Send your text for an Arabic summary.",
-        "change_lang": "🌐 Change UI Language",
-        "select_lang": "🌐 **Select Language:**"
-    }
-}
-
-def get_t(user_id: int, key: str) -> str:
-    lang = user_languages.get(user_id, "en")
-    if lang not in TRANSLATIONS:
-        lang = "en"
-    return TRANSLATIONS[lang].get(key, TRANSLATIONS["en"].get(key, key))
-
-def is_rate_limited(user_id: int) -> bool:
-    current_time = time.time()
-    user_message_times[user_id] = [
-        t for t in user_message_times[user_id] if current_time - t < RATE_LIMIT_WINDOW
-    ]
-    if len(user_message_times[user_id]) >= RATE_LIMIT_COUNT:
-        return True
-    user_message_times[user_id].append(current_time)
-    return False
-
 def get_main_keyboard(user_id: int):
-    keyboard = [
-        [InlineKeyboardButton(get_t(user_id, "quick_summary"), callback_data="quick_summary"), InlineKeyboardButton(get_t(user_id, "key_points"), callback_data="key_points")],
-        [InlineKeyboardButton(get_t(user_id, "arabic_summary"), callback_data="arabic_summary")],
-        [InlineKeyboardButton(get_t(user_id, "change_lang"), callback_data="change_lang")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    s = user_settings[user_id]
+    mode_marks = {"quick": "⚡", "points": "📌", "arabic": "🌐"}
+    lang_marks = {"en": "🇺🇸 EN", "ar": "🇸🇦 AR"}
 
-def get_language_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🇸🇦 العربية", callback_data="set_lang_ar"), InlineKeyboardButton("🇺🇸 English", callback_data="set_lang_en")]
+        [
+            InlineKeyboardButton(f"{mode_marks.get(s['mode'], '⚡')} Mode", callback_data="toggle_mode"),
+            InlineKeyboardButton(f"Lang: {lang_marks.get(s['lang'], 'EN')}", callback_data="toggle_lang")
+        ]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_states[user_id] = "quick_summary"
     user_histories[user_id] = []
     
-    text = get_t(user_id, "welcome")
+    text = "🤖 **Welcome to the AI Document & Text Summarizer!** 📄\n\nاختر وضع التلخيص أو اللغة من الأزرار بالأسفل ثم أرسل نصك:"
     await update.message.reply_text(text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,34 +48,26 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = query.from_user.id
     await query.answer()
 
-    if query.data.startswith("set_lang_"):
-        selected_lang = query.data.split("_")[2]
-        user_languages[user_id] = selected_lang
-        msg = f"✅ Language updated to: **{selected_lang.upper()}**"
-        await query.message.reply_text(msg, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
-        return
+    s = user_settings[user_id]
 
-    if query.data == "quick_summary":
-        user_states[user_id] = "quick_summary"
-        user_histories[user_id] = []
-        msg = get_t(user_id, "quick_summary_text")
-    elif query.data == "key_points":
-        user_states[user_id] = "key_points"
-        user_histories[user_id] = []
-        msg = get_t(user_id, "key_points_text")
-    elif query.data == "arabic_summary":
-        user_states[user_id] = "arabic_summary"
-        user_histories[user_id] = []
-        msg = get_t(user_id, "arabic_summary_text")
-    elif query.data == "change_lang":
-        await query.message.reply_text(get_t(user_id, "select_lang"), reply_markup=get_language_keyboard(), parse_mode="Markdown")
-        return
+    if query.data == "toggle_mode":
+        if s["mode"] == "quick":
+            s["mode"] = "points"
+        elif s["mode"] == "points":
+            s["mode"] = "arabic"
+        else:
+            s["mode"] = "quick"
+    elif query.data == "toggle_lang":
+        s["lang"] = "ar" if s["lang"] == "en" else "en"
 
-    await query.message.reply_text(msg, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+    modes_desc = {"quick": "⚡ Quick Summary", "points": "📌 Key Points", "arabic": "🌐 Arabic Summary"}
+    status_text = f"⚙️ **Settings Updated:**\n- Mode: {modes_desc[s['mode']]}\n- Language: {s['lang'].upper()}\n\nأرسل النص الآن للتلخيص:"
+    
+    await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    current_state = user_states.get(user_id, "quick_summary")
+    s = user_settings[user_id]
 
     if is_rate_limited(user_id):
         await update.message.reply_text("⚠️ Rate limit reached.")
@@ -130,9 +78,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(user_histories[user_id]) > 10:
         user_histories[user_id] = user_histories[user_id][-10:]
 
-    if current_state == "arabic_summary":
+    if s["mode"] == "arabic" or s["lang"] == "ar":
         system_content = "You are a professional text summarizer. You MUST provide a clear, concise summary of the text provided by the user entirely and strictly in Arabic language."
-    elif current_state == "key_points":
+    elif s["mode"] == "points":
         system_content = "You are a professional text summarizer. Extract the main key points of the text provided in clear bullet points in English."
     else:
         system_content = "You are a professional text summarizer. Provide a quick, clear, and concise summary of the text provided by the user in English."
@@ -156,6 +104,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"AI Error: {e}")
         await update.message.reply_text(f"حدث خطأ: {str(e)}", reply_markup=get_main_keyboard(user_id))
+
+def is_rate_limited(user_id: int) -> bool:
+    current_time = time.time()
+    user_message_times[user_id] = [
+        t for t in user_message_times[user_id] if current_time - t < RATE_LIMIT_WINDOW
+    ]
+    if len(user_message_times[user_id]) >= RATE_LIMIT_COUNT:
+        return True
+    user_message_times[user_id].append(current_time)
+    return False
 
 def main():
     if not TELEGRAM_TOKEN:
