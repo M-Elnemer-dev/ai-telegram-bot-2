@@ -42,7 +42,7 @@ UI_TEXTS = {
         "deep": "🧠 Deep Analysis",
         "error": "⚠️ An error occurred while generating the response.",
         "unsupported": "⚠️ Unsupported file format.",
-        "ocr_error": "⚠️ Could not extract text from the image."
+        "ocr_error": "⚠️ Could not extract clear text from this image. Try sending a clearer image or text directly."
     },
     "ar": {
         "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً، أو ملفاً، أو صورة:",
@@ -59,7 +59,7 @@ UI_TEXTS = {
         "deep": "🧠 تحليل متعمق",
         "error": "⚠️ حدث خطأ أثناء توليد الرد من الذكاء الاصطناعي.",
         "unsupported": "⚠️ صيغة الملف غير مدعومة.",
-        "ocr_error": "⚠️ تعذر استخراج النص من الصورة."
+        "ocr_error": "⚠️ عذراً، لم أتمكن من قراءة نص واضح من هذه الصورة. جرب إرسال صورة أوضح أو أرسل النص مباشرة."
     },
     "fr": {
         "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄",
@@ -83,7 +83,7 @@ UI_TEXTS = {
         "mode_btn": "⚙️ Modus",
         "lang_btn": "🌐 Sprache",
         "select_mode": "📌 **Wählen Sie den Modus:**",
-        "select_lang": "📌 **Wählen Sie die Sprache:**",
+        "select_lang": "🌐 **Wählen Sie die Sprache:**",
         "back": "🔙 Zurück",
         "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
         "send_text": "Senden Sie Text, Dokument oder Bild:",
@@ -288,13 +288,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         image = Image.open(photo_io)
         extracted_text = pytesseract.image_to_string(image)
 
-        if extracted_text.strip():
+        if extracted_text and len(extracted_text.strip()) > 3:
             await process_content(update, context, extracted_text)
         else:
-            await update.message.reply_text(get_t(lang_code, "ocr_error"), reply_markup=get_main_keyboard(user_id))
+            await update.message.reply_text(
+                get_t(lang_code, "ocr_error"),
+                reply_markup=get_main_keyboard(user_id)
+            )
     except Exception as e:
         logger.error(f"OCR Error: {e}")
-        await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
+        await update.message.reply_text(
+            get_t(lang_code, "ocr_error"),
+            reply_markup=get_main_keyboard(user_id)
+        )
 
 def is_rate_limited(user_id: int) -> bool:
     current_time = time.time()
