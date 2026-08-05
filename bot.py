@@ -20,8 +20,6 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_CHAT_ID")
 
-g4f_client = Client()
-
 user_settings = defaultdict(lambda: {"mode": "quick", "lang": "en"})
 user_histories = defaultdict(list)
 user_message_times = defaultdict(list)
@@ -30,7 +28,7 @@ RATE_LIMIT_WINDOW = 10
 
 UI_TEXTS = {
     "en": {
-        "welcome": "🤖 **Welcome to the AI Summarizer Bot!** 📄\n\nSend text, documents (PDF, Word, TXT), or images, and choose your settings below:",
+        "welcome": "🤖 **Welcome to the AI Summarizer Bot!** 📄\n\nSend text, documents (PDF, Word, TXT), or images:",
         "mode_btn": "⚙️ Mode",
         "lang_btn": "🌐 Lang",
         "select_mode": "📌 **Select Summary Mode:**",
@@ -42,12 +40,12 @@ UI_TEXTS = {
         "quick": "⚡ Quick Summary",
         "points": "📌 Key Points",
         "deep": "🧠 Deep Analysis",
-        "error": "⚠️ An error occurred.",
+        "error": "⚠️ An error occurred while generating the response.",
         "unsupported": "⚠️ Unsupported file format.",
         "ocr_error": "⚠️ Could not extract text from the image."
     },
     "ar": {
-        "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً، أو ملفاً (PDF، Word، TXT)، أو صورة، وقم باختيار إعداداتك بالأسفل:",
+        "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً، أو ملفاً (PDF، Word، TXT)، أو صورة:",
         "mode_btn": "⚙️ الوضع",
         "lang_btn": "🌐 اللغة",
         "select_mode": "📌 **اختر نوع التلخيص:**",
@@ -59,12 +57,12 @@ UI_TEXTS = {
         "quick": "⚡ تلخيص سريع",
         "points": "📌 نقاط رئيسية",
         "deep": "🧠 تحليل متعمق",
-        "error": "⚠️ حدث خطأ أثناء المعالجة.",
+        "error": "⚠️ حدث خطأ أثناء توليد الرد من الذكاء الاصطناعي.",
         "unsupported": "⚠️ صيغة الملف غير مدعومة.",
         "ocr_error": "⚠️ تعذر استخراج النص من الصورة."
     },
     "fr": {
-        "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄\n\nEnvoyez du texte, des documents ou des images:",
+        "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄",
         "mode_btn": "⚙️ Mode",
         "lang_btn": "🌐 Langue",
         "select_mode": "📌 **Sélectionnez le mode de résumé:**",
@@ -72,16 +70,16 @@ UI_TEXTS = {
         "back": "🔙 Retour",
         "settings_updated": "⚙️ **Paramètres mis à jour:**",
         "send_text": "Envoyez votre texte, document ou image:",
-        "loading": "⏳ **Traitement en cours, veuillez patienter...**",
+        "loading": "⏳ **Traitement en cours...**",
         "quick": "⚡ Résumé Rapide",
         "points": "📌 Points Clés",
         "deep": "🧠 Analyse Approfondie",
         "error": "⚠️ Une erreur s'est produite.",
         "unsupported": "⚠️ Format non pris en charge.",
-        "ocr_error": "⚠️ Impossible d'extraire le texte de l'image."
+        "ocr_error": "⚠️ Impossible d'extraire le texte."
     },
     "de": {
-        "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄\n\nSenden Sie Text, Dokumente oder Bilder:",
+        "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄",
         "mode_btn": "⚙️ Modus",
         "lang_btn": "🌐 Sprache",
         "select_mode": "📌 **Wählen Sie den Modus:**",
@@ -89,7 +87,7 @@ UI_TEXTS = {
         "back": "🔙 Zurück",
         "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
         "send_text": "Senden Sie Text, Dokument oder Bild:",
-        "loading": "⏳ **Ihre Anfrage wird bearbeitet, bitte warten...**",
+        "loading": "⏳ **Ihre Anfrage wird bearbeitet...**",
         "quick": "⚡ Schnelle Zusammenfassung",
         "points": "📌 Kernpunkte",
         "deep": "🧠 Tiefenanalyse",
@@ -115,7 +113,6 @@ def get_main_keyboard(user_id: int):
     s = user_settings[user_id]
     lang = s['lang']
     mode = s['mode']
-    
     mode_label = get_t(lang, mode)
     lang_label = LANG_NAMES.get(lang, "🇺🇸 English")
 
@@ -126,29 +123,25 @@ def get_main_keyboard(user_id: int):
     return InlineKeyboardMarkup(keyboard)
 
 def get_modes_keyboard(lang: str):
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton(get_t(lang, "quick"), callback_data="set_mode_quick")],
         [InlineKeyboardButton(get_t(lang, "points"), callback_data="set_mode_points")],
         [InlineKeyboardButton(get_t(lang, "deep"), callback_data="set_mode_deep")],
         [InlineKeyboardButton(get_t(lang, "back"), callback_data="back_main")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 def get_langs_keyboard(lang: str):
-    keyboard = [
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇸🇦 العربية", callback_data="set_lang_ar"), InlineKeyboardButton("🇺🇸 English", callback_data="set_lang_en")],
         [InlineKeyboardButton("🇫🇷 Français", callback_data="set_lang_fr"), InlineKeyboardButton("🇩🇪 Deutsch", callback_data="set_lang_de")],
         [InlineKeyboardButton(get_t(lang, "back"), callback_data="back_main")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_settings[user_id] = {"mode": "quick", "lang": "en"}
     user_histories[user_id] = []
-    
-    text = get_t("en", "welcome")
-    await update.message.reply_text(text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+    await update.message.reply_text(get_t("en", "welcome"), reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -203,9 +196,7 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
     else:
         system_content = f"You are a professional text summarizer. Provide a summary in '{lang_code}' language."
 
-    messages = [
-        {"role": "system", "content": system_content}
-    ] + user_histories[user_id]
+    messages = [{"role": "system", "content": system_content}] + user_histories[user_id]
 
     try:
         client = Client()
@@ -213,19 +204,26 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
             model="gpt-4o",
             messages=messages,
         )
-        reply = response.choices[0].message.content
+        reply = response.choices[0].message.content if response and response.choices else None
         
-        await loading_msg.delete()
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
         
         if reply:
             user_histories[user_id].append({"role": "assistant", "content": reply})
             await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         else:
             await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
+            
     except Exception as e:
         logger.error(f"AI Error: {e}")
-        await loading_msg.delete()
-        await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(f"{get_t(lang_code, 'error')}\n`{str(e)}`", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
