@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import io
+import asyncio
 from collections import defaultdict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -58,12 +59,48 @@ UI_TEXTS = {
         "error": "⚠️ استغرق خادم الذكاء الاصطناعي وقتاً طويلاً أو الخدمة مضغوطة حالياً. حاول مرة أخرى.",
         "unsupported": "⚠️ صيغة الملف غير مدعومة.",
         "photo_not_supported": "⚠️ الصور غير مدعومة. يرسل النصوص أو المستندات فقط."
+    },
+    "fr": {
+        "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄",
+        "mode_btn": "⚙️ Mode",
+        "lang_btn": "🌐 Langue",
+        "select_mode": "📌 **Sélectionnez le mode de résumé:**",
+        "select_lang": "📌 **Sélectionnez la langue de sortie:**",
+        "back": "🔙 Retour",
+        "settings_updated": "⚙️ **Paramètres mis à jour:**",
+        "send_text": "Envoyez votre texte ou document:",
+        "loading": "⏳ **Traitement en cours...**",
+        "quick": "⚡ Résumé Rapide",
+        "points": "📌 Points Clés",
+        "deep": "🧠 Analyse Approfondie",
+        "error": "⚠️ Le service IA a pris trop de temps. Veuillez réessayer.",
+        "unsupported": "⚠️ Format non pris en charge.",
+        "photo_not_supported": "⚠️ Images non prises en charge."
+    },
+    "de": {
+        "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄",
+        "mode_btn": "⚙️ Modus",
+        "lang_btn": "🌐 Sprache",
+        "select_mode": "📌 **Wählen Sie den Modus:**",
+        "select_lang": "🌐 **Wählen Sie die Sprache:**",
+        "back": "🔙 Zurück",
+        "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
+        "send_text": "Senden Sie Text oder Dokument:",
+        "loading": "⏳ **Ihre Anfrage wird bearbeitet...**",
+        "quick": "⚡ Schnelle Zusammenfassung",
+        "points": "📌 Kernpunkte",
+        "deep": "🧠 Tiefenanalyse",
+        "error": "⚠️ Der KI-Dienst hat zu lange gedauert. Bitte versuchen Sie es erneut.",
+        "unsupported": "⚠️ Nicht unterstütztes Format.",
+        "photo_not_supported": "⚠️ Bilder nicht unterstützt."
     }
 }
 
 LANG_NAMES = {
     "en": "🇺🇸 English",
-    "ar": "🇸🇦 العربية"
+    "ar": "🇸🇦 العربية",
+    "fr": "🇫🇷 Français",
+    "de": "🇩🇪 Deutsch"
 }
 
 def get_t(lang: str, key: str) -> str:
@@ -95,6 +132,7 @@ def get_modes_keyboard(lang: str):
 def get_langs_keyboard(lang: str):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇸🇦 العربية", callback_data="set_lang_ar"), InlineKeyboardButton("🇺🇸 English", callback_data="set_lang_en")],
+        [InlineKeyboardButton("🇫🇷 Français", callback_data="set_lang_fr"), InlineKeyboardButton("🇩🇪 Deutsch", callback_data="set_lang_de")],
         [InlineKeyboardButton(get_t(lang, "back"), callback_data="back_main")]
     ])
 
@@ -160,13 +198,16 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
     messages = [{"role": "system", "content": system_content}] + user_histories[user_id]
 
     try:
-        client = Client()
-        # محاولة الاتصال بالخدمة المجانية مع تحديد موديل بديل يضمن السرعة والاستقرار
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages,
-        )
-        reply = response.choices[0].message.content if response and response.choices else None
+        def fetch_ai():
+            client = Client()
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=messages,
+            )
+            return response.choices[0].message.content if response and response.choices else None
+
+        # استخدام asyncio.wait_for لضمان عدم التعليق أكثر من 15 ثانية
+        reply = await asyncio.wait_for(asyncio.to_thread(fetch_ai), timeout=15.0)
         
         try:
             await loading_msg.delete()
@@ -179,6 +220,13 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
         else:
             await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
             
+    except asyncio.TimeoutError:
+        logger.error("AI Request Timeout")
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
+        await update.message.reply_text(get_t(lang_code, 'error'), reply_markup=get_main_keyboard(user_id))
     except Exception as e:
         logger.error(f"AI Error: {e}")
         try:
