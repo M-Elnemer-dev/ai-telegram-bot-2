@@ -23,10 +23,67 @@ user_message_times = defaultdict(list)
 RATE_LIMIT_COUNT = 5
 RATE_LIMIT_WINDOW = 10
 
-MODE_NAMES = {
-    "quick": "⚡ Quick Summary",
-    "points": "📌 Key Points",
-    "deep": "🧠 Deep Analysis"
+UI_TEXTS = {
+    "en": {
+        "welcome": "🤖 **Welcome to the AI Document & Text Summarizer!** 📄\n\nChoose your settings below:",
+        "mode_btn": "⚙️ Mode",
+        "lang_btn": "🌐 Lang",
+        "select_mode": "📌 **Select Summary Mode:**",
+        "select_lang": "🌐 **Select Output Language:**",
+        "back": "🔙 Back",
+        "settings_updated": "⚙️ **Settings Updated:**",
+        "send_text": "Send your text now for summarization:",
+        "loading": "⏳ **Processing your request, please wait...**",
+        "quick": "⚡ Quick Summary",
+        "points": "📌 Key Points",
+        "deep": "🧠 Deep Analysis",
+        "error": "⚠️ An error occurred."
+    },
+    "ar": {
+        "welcome": "🤖 **مرحباً بك في بوت تلخيص النصوص والمستندات الذكي!** 📄\n\nاختر إعداداتك بالأسفل:",
+        "mode_btn": "⚙️ الوضع",
+        "lang_btn": "🌐 اللغة",
+        "select_mode": "📌 **اختر نوع التلخيص:**",
+        "select_lang": "🌐 **اختر لغة الإخراج:**",
+        "back": "🔙 رجوع",
+        "settings_updated": "⚙️ **تم تحديث الإعدادات:**",
+        "send_text": "أرسل النص الآن للتلخيص:",
+        "loading": "⏳ **جاري معالجة طلبك، برجاء الانتظار...**",
+        "quick": "⚡ تلخيص سريع",
+        "points": "📌 نقاط رئيسية",
+        "deep": "🧠 تحليل متعمق",
+        "error": "⚠️ حدث خطأ أثناء المعالجة."
+    },
+    "fr": {
+        "welcome": "🤖 **Bienvenue dans le bot de résumé de texte IA!** 📄\n\nChoisissez vos paramètres ci-dessous:",
+        "mode_btn": "⚙️ Mode",
+        "lang_btn": "🌐 Langue",
+        "select_mode": "📌 **Sélectionnez le mode de résumé:**",
+        "select_lang": "🌐 **Sélectionnez la langue de sortie:**",
+        "back": "🔙 Retour",
+        "settings_updated": "⚙️ **Paramètres mis à jour:**",
+        "send_text": "Envoyez votre texte maintenant:",
+        "loading": "⏳ **Traitement en cours, veuillez patienter...**",
+        "quick": "⚡ Résumé Rapide",
+        "points": "📌 Points Clés",
+        "deep": "🧠 Analyse Approfondie",
+        "error": "⚠️ Une erreur s'est produite."
+    },
+    "de": {
+        "welcome": "🤖 **Willkommen beim KI-Textzusammenfassungs-Bot!** 📄\n\nWählen Sie unten Ihre Einstellungen:",
+        "mode_btn": "⚙️ Modus",
+        "lang_btn": "🌐 Sprache",
+        "select_mode": "📌 **Wählen Sie den Modus:**",
+        "select_lang": "🌐 **Wählen Sie die Sprache:**",
+        "back": "🔙 Zurück",
+        "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
+        "send_text": "Senden Sie jetzt Ihren Text:",
+        "loading": "⏳ **Ihre Anfrage wird bearbeitet, bitte warten...**",
+        "quick": "⚡ Schnelle Zusammenfassung",
+        "points": "📌 Kernpunkte",
+        "deep": "🧠 Tiefenanalyse",
+        "error": "⚠️ Ein Fehler ist aufgetreten."
+    }
 }
 
 LANG_NAMES = {
@@ -36,39 +93,48 @@ LANG_NAMES = {
     "de": "🇩🇪 Deutsch"
 }
 
+def get_t(lang: str, key: str) -> str:
+    if lang not in UI_TEXTS:
+        lang = "en"
+    return UI_TEXTS[lang].get(key, UI_TEXTS["en"].get(key, key))
+
 def get_main_keyboard(user_id: int):
     s = user_settings[user_id]
-    current_mode_text = MODE_NAMES.get(s['mode'], '⚡ Quick')
-    current_lang_text = LANG_NAMES.get(s['lang'], '🇺🇸 English')
+    lang = s['lang']
+    mode = s['mode']
+    
+    mode_label = get_t(lang, mode)
+    lang_label = LANG_NAMES.get(lang, "🇺🇸 English")
 
     keyboard = [
-        [InlineKeyboardButton(f"⚙️ Mode: {current_mode_text}", callback_data="menu_modes")],
-        [InlineKeyboardButton(f"🌐 Lang: {current_lang_text}", callback_data="menu_langs")],
+        [InlineKeyboardButton(f"{get_t(lang, 'mode_btn')}: {mode_label}", callback_data="menu_modes")],
+        [InlineKeyboardButton(f"{get_t(lang, 'lang_btn')}: {lang_label}", callback_data="menu_langs")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def get_modes_keyboard():
+def get_modes_keyboard(lang: str):
     keyboard = [
-        [InlineKeyboardButton("⚡ Quick Summary", callback_data="set_mode_quick")],
-        [InlineKeyboardButton("📌 Key Points", callback_data="set_mode_points")],
-        [InlineKeyboardButton("🧠 Deep Analysis", callback_data="set_mode_deep")],
-        [InlineKeyboardButton("🔙 Back", callback_data="back_main")]
+        [InlineKeyboardButton(get_t(lang, "quick"), callback_data="set_mode_quick")],
+        [InlineKeyboardButton(get_t(lang, "points"), callback_data="set_mode_points")],
+        [InlineKeyboardButton(get_t(lang, "deep"), callback_data="set_mode_deep")],
+        [InlineKeyboardButton(get_t(lang, "back"), callback_data="back_main")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def get_langs_keyboard():
+def get_langs_keyboard(lang: str):
     keyboard = [
         [InlineKeyboardButton("🇸🇦 العربية", callback_data="set_lang_ar"), InlineKeyboardButton("🇺🇸 English", callback_data="set_lang_en")],
         [InlineKeyboardButton("🇫🇷 Français", callback_data="set_lang_fr"), InlineKeyboardButton("🇩🇪 Deutsch", callback_data="set_lang_de")],
-        [InlineKeyboardButton("🔙 Back", callback_data="back_main")]
+        [InlineKeyboardButton(get_t(lang, "back"), callback_data="back_main")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    user_settings[user_id] = {"mode": "quick", "lang": "en"}
     user_histories[user_id] = []
     
-    text = "🤖 **Welcome to the AI Document & Text Summarizer!** 📄\n\nاختر وضع التلخيص ولغة الإخراج من الأزرار بالأسفل:"
+    text = get_t("en", "welcome")
     await update.message.reply_text(text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,22 +144,25 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     s = user_settings[user_id]
     data = query.data
+    lang = s["lang"]
 
     if data == "menu_modes":
-        await query.message.edit_text("📌 **اختر نوع التلخيص المطلوب:**", reply_markup=get_modes_keyboard(), parse_mode="Markdown")
+        await query.message.edit_text(get_t(lang, "select_mode"), reply_markup=get_modes_keyboard(lang), parse_mode="Markdown")
         return
     elif data == "menu_langs":
-        await query.message.edit_text("🌐 **اختر لغة الإخراج:**", reply_markup=get_langs_keyboard(), parse_mode="Markdown")
+        await query.message.edit_text(get_t(lang, "select_lang"), reply_markup=get_langs_keyboard(lang), parse_mode="Markdown")
         return
     elif data == "back_main":
-        await query.message.edit_text("⚙️ **الإعدادات الحالية:**\nأرسل النص الآن للتلخيص:", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+        status_text = f"{get_t(lang, 'settings_updated')}\n- Mode: {get_t(lang, s['mode'])}\n- Language: {LANG_NAMES[lang]}\n\n{get_t(lang, 'send_text')}"
+        await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         return
     elif data.startswith("set_mode_"):
         s["mode"] = data.split("_")[2]
     elif data.startswith("set_lang_"):
         s["lang"] = data.split("_")[2]
 
-    status_text = f"⚙️ **Settings Updated:**\n- Mode: {MODE_NAMES[s['mode']]}\n- Language: {LANG_NAMES[s['lang']]}\n\nأرسل النص الآن للتلخيص:"
+    new_lang = s["lang"]
+    status_text = f"{get_t(new_lang, 'settings_updated')}\n- Mode: {get_t(new_lang, s['mode'])}\n- Language: {LANG_NAMES[new_lang]}\n\n{get_t(new_lang, 'send_text')}"
     await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,13 +173,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Rate limit reached.")
         return
 
+    lang_code = s["lang"]
+    mode = s["mode"]
+
+    # رسالة اللودينج المؤقتة
+    loading_msg = await update.message.reply_text(get_t(lang_code, "loading"), parse_mode="Markdown")
+
     user_text = update.message.text
     user_histories[user_id].append({"role": "user", "content": user_text})
     if len(user_histories[user_id]) > 10:
         user_histories[user_id] = user_histories[user_id][-10:]
-
-    lang_code = s["lang"]
-    mode = s["mode"]
 
     if mode == "quick":
         system_content = f"You are a professional text summarizer. Provide a quick, clear, and concise summary of the text provided by the user in '{lang_code}' language."
@@ -132,6 +204,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             messages=messages,
         )
         reply = response.choices[0].message.content
+        
+        # حذف رسالة اللودينج وإرسال النتيجة
+        await loading_msg.delete()
+        
         if reply:
             user_histories[user_id].append({"role": "assistant", "content": reply})
             await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
@@ -139,7 +215,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
     except Exception as e:
         logger.error(f"AI Error: {e}")
-        await update.message.reply_text(f"حدث خطأ: {str(e)}", reply_markup=get_main_keyboard(user_id))
+        await loading_msg.delete()
+        await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
 
 def is_rate_limited(user_id: int) -> bool:
     current_time = time.time()
