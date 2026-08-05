@@ -101,12 +101,15 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "quick_summary":
         user_states[user_id] = "quick_summary"
+        user_histories[user_id] = []
         msg = get_t(user_id, "quick_summary_text")
     elif query.data == "key_points":
         user_states[user_id] = "key_points"
+        user_histories[user_id] = []
         msg = get_t(user_id, "key_points_text")
     elif query.data == "arabic_summary":
         user_states[user_id] = "arabic_summary"
+        user_histories[user_id] = []
         msg = get_t(user_id, "arabic_summary_text")
     elif query.data == "change_lang":
         await query.message.reply_text(get_t(user_id, "select_lang"), reply_markup=get_language_keyboard(), parse_mode="Markdown")
@@ -128,7 +131,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_histories[user_id] = user_histories[user_id][-10:]
 
     if current_state == "arabic_summary":
-        system_content = "You are a professional text summarizer. Provide a clear, concise summary of the text provided by the user entirely and strictly in Arabic language."
+        system_content = "You are a professional text summarizer. You MUST provide a clear, concise summary of the text provided by the user entirely and strictly in Arabic language."
     elif current_state == "key_points":
         system_content = "You are a professional text summarizer. Extract the main key points of the text provided in clear bullet points in English."
     else:
@@ -147,7 +150,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = response.choices[0].message.content
         if reply:
             user_histories[user_id].append({"role": "assistant", "content": reply})
-            # هنا التعديل: إرسال النتيجة ومعها القائمة والأزرار تلقائياً من غير ما تحتاج تدوس ستارت
             await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         else:
             await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
