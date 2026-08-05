@@ -8,6 +8,8 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from g4f.client import Client
 import PyPDF2
 from docx import Document
+from PIL import Image
+import pytesseract
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -39,7 +41,8 @@ UI_TEXTS = {
         "points": "📌 Key Points",
         "deep": "🧠 Deep Analysis",
         "error": "⚠️ An error occurred while generating the response.",
-        "unsupported": "⚠️ Unsupported file format."
+        "unsupported": "⚠️ Unsupported file format.",
+        "ocr_error": "⚠️ Could not extract text from the image."
     },
     "ar": {
         "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً، أو ملفاً، أو صورة:",
@@ -55,7 +58,8 @@ UI_TEXTS = {
         "points": "📌 نقاط رئيسية",
         "deep": "🧠 تحليل متعمق",
         "error": "⚠️ حدث خطأ أثناء توليد الرد من الذكاء الاصطناعي.",
-        "unsupported": "⚠️ صيغة الملف غير مدعومة."
+        "unsupported": "⚠️ صيغة الملف غير مدعومة.",
+        "ocr_error": "⚠️ تعذر استخراج النص من الصورة."
     },
     "fr": {
         "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄",
@@ -71,14 +75,15 @@ UI_TEXTS = {
         "points": "📌 Points Clés",
         "deep": "🧠 Analyse Approfondie",
         "error": "⚠️ Une erreur s'est produite.",
-        "unsupported": "⚠️ Format non pris en charge."
+        "unsupported": "⚠️ Format non pris en charge.",
+        "ocr_error": "⚠️ Impossible d'extraire le texte."
     },
     "de": {
         "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄",
         "mode_btn": "⚙️ Modus",
         "lang_btn": "🌐 Sprache",
         "select_mode": "📌 **Wählen Sie den Modus:**",
-        "select_lang": "🌐 **Wählen Sie die Sprache:**",
+        "select_lang": "📌 **Wählen Sie die Sprache:**",
         "back": "🔙 Zurück",
         "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
         "send_text": "Senden Sie Text, Dokument oder Bild:",
@@ -87,7 +92,8 @@ UI_TEXTS = {
         "points": "📌 Kernpunkte",
         "deep": "🧠 Tiefenanalyse",
         "error": "⚠️ Ein Fehler ist aufgetreten.",
-        "unsupported": "⚠️ Nicht unterstütztes Format."
+        "unsupported": "⚠️ Nicht unterstütztes Format.",
+        "ocr_error": "⚠️ Text konnte nicht extrahiert werden."
     }
 }
 
@@ -165,7 +171,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = f"{get_t(new_lang, 'settings_updated')}\n- Mode: {get_t(new_lang, s['mode'])}\n- Language: {LANG_NAMES[new_lang]}\n\n{get_t(new_lang, 'send_text')}"
     await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
-async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, content_messages):
+async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, text_content: str):
     user_id = update.effective_user.id
     s = user_settings[user_id]
     lang_code = s["lang"]
@@ -177,16 +183,20 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, co
 
     loading_msg = await update.message.reply_text(get_t(lang_code, "loading"), parse_mode="Markdown")
 
-    if mode == "quick":
-        system_content = f"You are a professional text and image summarizer. Provide a quick, clear, and concise summary of the provided text or image content in '{lang_code}' language."
-    elif mode == "points":
-        system_content = f"You are a professional text and image summarizer. Extract the main key points of the provided content in clear bullet points in '{lang_code}' language."
-    elif mode == "deep":
-        system_content = f"You are an expert analytical assistant. Provide a deep, comprehensive, and detailed analysis of the provided content in '{lang_code}' language."
-    else:
-        system_content = f"You are a professional summarizer. Provide a summary in '{lang_code}' language."
+    user_histories[user_id].append({"role": "user", "content": text_content})
+    if len(user_histories[user_id]) > 10:
+        user_histories[user_id] = user_histories[user_id][-10:]
 
-    messages = [{"role": "system", "content": system_content}] + content_messages
+    if mode == "quick":
+        system_content = f"You are a professional text summarizer. Provide a quick, clear, and concise summary of the text provided by the user in '{lang_code}' language."
+    elif mode == "points":
+        system_content = f"You are a professional text summarizer. Extract the main key points of the text provided in clear bullet points in '{lang_code}' language."
+    elif mode == "deep":
+        system_content = f"You are an expert analytical assistant. Provide a deep, comprehensive, and detailed analysis and summary of the text provided by the user in '{lang_code}' language."
+    else:
+        system_content = f"You are a professional text summarizer. Provide a summary in '{lang_code}' language."
+
+    messages = [{"role": "system", "content": system_content}] + user_histories[user_id]
 
     try:
         client = Client()
@@ -202,6 +212,7 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, co
             pass
         
         if reply:
+            user_histories[user_id].append({"role": "assistant", "content": reply})
             await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         else:
             await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
@@ -217,7 +228,7 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, co
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text:
-        await process_content(update, context, [{"role": "user", "content": text}])
+        await process_content(update, context, text)
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -253,7 +264,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         if extracted_text.strip():
-            await process_content(update, context, [{"role": "user", "content": extracted_text}])
+            await process_content(update, context, extracted_text)
         else:
             await update.message.reply_text("⚠️ Could not extract text from the file.", reply_markup=get_main_keyboard(user_id))
             
@@ -269,25 +280,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
     photo_file = await photo.get_file()
     
-    photo_bytes = io.BytesIO()
-    await photo_file.download_to_memory(photo_bytes)
-    import base64
-    base64_image = base64.b64encode(photo_bytes.getvalue()).decode('utf-8')
+    photo_io = io.BytesIO()
+    await photo_file.download_to_memory(photo_io)
+    photo_io.seek(0)
 
-    content_message = {
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Please read and summarize this image text according to my settings."},
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{base64_image}"
-                }
-            }
-        ]
-    }
-    
-    await process_content(update, context, [content_message])
+    try:
+        image = Image.open(photo_io)
+        extracted_text = pytesseract.image_to_string(image)
+
+        if extracted_text.strip():
+            await process_content(update, context, extracted_text)
+        else:
+            await update.message.reply_text(get_t(lang_code, "ocr_error"), reply_markup=get_main_keyboard(user_id))
+    except Exception as e:
+        logger.error(f"OCR Error: {e}")
+        await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
 
 def is_rate_limited(user_id: int) -> bool:
     current_time = time.time()
