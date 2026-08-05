@@ -1,10 +1,15 @@
 import os
 import time
 import logging
+import io
 from collections import defaultdict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from g4f.client import Client
+import PyPDF2
+from docx import Document
+from PIL import Image
+import pytesseract
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -25,64 +30,72 @@ RATE_LIMIT_WINDOW = 10
 
 UI_TEXTS = {
     "en": {
-        "welcome": "🤖 **Welcome to the AI Document & Text Summarizer!** 📄\n\nChoose your settings below:",
+        "welcome": "🤖 **Welcome to the AI Summarizer Bot!** 📄\n\nSend text, documents (PDF, Word, TXT), or images, and choose your settings below:",
         "mode_btn": "⚙️ Mode",
         "lang_btn": "🌐 Lang",
         "select_mode": "📌 **Select Summary Mode:**",
         "select_lang": "🌐 **Select Output Language:**",
         "back": "🔙 Back",
         "settings_updated": "⚙️ **Settings Updated:**",
-        "send_text": "Send your text now for summarization:",
+        "send_text": "Send your text, document, or image now:",
         "loading": "⏳ **Processing your request, please wait...**",
         "quick": "⚡ Quick Summary",
         "points": "📌 Key Points",
         "deep": "🧠 Deep Analysis",
-        "error": "⚠️ An error occurred."
+        "error": "⚠️ An error occurred.",
+        "unsupported": "⚠️ Unsupported file format.",
+        "ocr_error": "⚠️ Could not extract text from the image."
     },
     "ar": {
-        "welcome": "🤖 **مرحباً بك في بوت تلخيص النصوص والمستندات الذكي!** 📄\n\nاختر إعداداتك بالأسفل:",
+        "welcome": "🤖 **مرحباً بك في بوت التلخيص الذكي!** 📄\n\nأرسل نصاً، أو ملفاً (PDF، Word، TXT)، أو صورة، وقم باختيار إعداداتك بالأسفل:",
         "mode_btn": "⚙️ الوضع",
         "lang_btn": "🌐 اللغة",
         "select_mode": "📌 **اختر نوع التلخيص:**",
         "select_lang": "🌐 **اختر لغة الإخراج:**",
         "back": "🔙 رجوع",
         "settings_updated": "⚙️ **تم تحديث الإعدادات:**",
-        "send_text": "أرسل النص الآن للتلخيص:",
+        "send_text": "أرسل النص أو المستند أو الصورة الآن للتلخيص:",
         "loading": "⏳ **جاري معالجة طلبك، برجاء الانتظار...**",
         "quick": "⚡ تلخيص سريع",
         "points": "📌 نقاط رئيسية",
         "deep": "🧠 تحليل متعمق",
-        "error": "⚠️ حدث خطأ أثناء المعالجة."
+        "error": "⚠️ حدث خطأ أثناء المعالجة.",
+        "unsupported": "⚠️ صيغة الملف غير مدعومة.",
+        "ocr_error": "⚠️ تعذر استخراج النص من الصورة."
     },
     "fr": {
-        "welcome": "🤖 **Bienvenue dans le bot de résumé de texte IA!** 📄\n\nChoisissez vos paramètres ci-dessous:",
+        "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄\n\nEnvoyez du texte, des documents ou des images:",
         "mode_btn": "⚙️ Mode",
         "lang_btn": "🌐 Langue",
         "select_mode": "📌 **Sélectionnez le mode de résumé:**",
         "select_lang": "🌐 **Sélectionnez la langue de sortie:**",
         "back": "🔙 Retour",
         "settings_updated": "⚙️ **Paramètres mis à jour:**",
-        "send_text": "Envoyez votre texte maintenant:",
+        "send_text": "Envoyez votre texte, document ou image:",
         "loading": "⏳ **Traitement en cours, veuillez patienter...**",
         "quick": "⚡ Résumé Rapide",
         "points": "📌 Points Clés",
         "deep": "🧠 Analyse Approfondie",
-        "error": "⚠️ Une erreur s'est produite."
+        "error": "⚠️ Une erreur s'est produite.",
+        "unsupported": "⚠️ Format non pris en charge.",
+        "ocr_error": "⚠️ Impossible d'extraire le texte de l'image."
     },
     "de": {
-        "welcome": "🤖 **Willkommen beim KI-Textzusammenfassungs-Bot!** 📄\n\nWählen Sie unten Ihre Einstellungen:",
+        "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄\n\nSenden Sie Text, Dokumente oder Bilder:",
         "mode_btn": "⚙️ Modus",
         "lang_btn": "🌐 Sprache",
         "select_mode": "📌 **Wählen Sie den Modus:**",
         "select_lang": "🌐 **Wählen Sie die Sprache:**",
         "back": "🔙 Zurück",
         "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
-        "send_text": "Senden Sie jetzt Ihren Text:",
+        "send_text": "Senden Sie Text, Dokument oder Bild:",
         "loading": "⏳ **Ihre Anfrage wird bearbeitet, bitte warten...**",
         "quick": "⚡ Schnelle Zusammenfassung",
         "points": "📌 Kernpunkte",
         "deep": "🧠 Tiefenanalyse",
-        "error": "⚠️ Ein Fehler ist aufgetreten."
+        "error": "⚠️ Ein Fehler ist aufgetreten.",
+        "unsupported": "⚠️ Nicht unterstütztes Format.",
+        "ocr_error": "⚠️ Text konnte nicht extrahiert werden."
     }
 }
 
@@ -165,22 +178,19 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = f"{get_t(new_lang, 'settings_updated')}\n- Mode: {get_t(new_lang, s['mode'])}\n- Language: {LANG_NAMES[new_lang]}\n\n{get_t(new_lang, 'send_text')}"
     await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, text_content: str):
     user_id = update.effective_user.id
     s = user_settings[user_id]
+    lang_code = s["lang"]
+    mode = s["mode"]
 
     if is_rate_limited(user_id):
         await update.message.reply_text("⚠️ Rate limit reached.")
         return
 
-    lang_code = s["lang"]
-    mode = s["mode"]
-
-    # رسالة اللودينج المؤقتة
     loading_msg = await update.message.reply_text(get_t(lang_code, "loading"), parse_mode="Markdown")
 
-    user_text = update.message.text
-    user_histories[user_id].append({"role": "user", "content": user_text})
+    user_histories[user_id].append({"role": "user", "content": text_content})
     if len(user_histories[user_id]) > 10:
         user_histories[user_id] = user_histories[user_id][-10:]
 
@@ -205,7 +215,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         reply = response.choices[0].message.content
         
-        # حذف رسالة اللودينج وإرسال النتيجة
         await loading_msg.delete()
         
         if reply:
@@ -216,6 +225,77 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"AI Error: {e}")
         await loading_msg.delete()
+        await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text:
+        await process_content(update, context, text)
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    s = user_settings[user_id]
+    lang_code = s["lang"]
+    
+    document = update.message.document
+    file_name = document.file_name.lower()
+    
+    file_bytes = await document.get_file()
+    file_io = io.BytesIO()
+    await file_bytes.download_to_memory(file_io)
+    file_io.seek(0)
+    
+    extracted_text = ""
+    
+    try:
+        if file_name.endswith('.pdf'):
+            reader = PyPDF2.PdfReader(file_io)
+            for page in reader.pages:
+                t = page.extract_text()
+                if t:
+                    extracted_text += t + "\n"
+        elif file_name.endswith('.docx'):
+            doc = Document(file_io)
+            for para in doc.paragraphs:
+                if para.text:
+                    extracted_text += para.text + "\n"
+        elif file_name.endswith('.txt'):
+            extracted_text = file_io.read().decode('utf-8', errors='ignore')
+        else:
+            await update.message.reply_text(get_t(lang_code, "unsupported"), reply_markup=get_main_keyboard(user_id))
+            return
+            
+        if extracted_text.strip():
+            await process_content(update, context, extracted_text)
+        else:
+            await update.message.reply_text("⚠️ Could not extract text from the file.", reply_markup=get_main_keyboard(user_id))
+            
+    except Exception as e:
+        logger.error(f"File reading error: {e}")
+        await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    s = user_settings[user_id]
+    lang_code = s["lang"]
+
+    photo = update.message.photo[-1]
+    photo_file = await photo.get_file()
+    
+    photo_io = io.BytesIO()
+    await photo_file.download_to_memory(photo_io)
+    photo_io.seek(0)
+
+    try:
+        image = Image.open(photo_io)
+        extracted_text = pytesseract.image_to_string(image)
+
+        if extracted_text.strip():
+            await process_content(update, context, extracted_text)
+        else:
+            await update.message.reply_text(get_t(lang_code, "ocr_error"), reply_markup=get_main_keyboard(user_id))
+    except Exception as e:
+        logger.error(f"OCR Error: {e}")
         await update.message.reply_text(get_t(lang_code, "error"), reply_markup=get_main_keyboard(user_id))
 
 def is_rate_limited(user_id: int) -> bool:
@@ -238,6 +318,8 @@ def main():
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     app.run_polling()
 
