@@ -85,7 +85,7 @@ UI_TEXTS = {
         "mode_btn": "⚙️ Modus",
         "lang_btn": "🌐 Sprache",
         "select_mode": "📌 **Wählen Sie den Modus:**",
-        "select_lang": "🌐 **Wählen Sie die Sprache:**",
+        "select_lang": "📌 **Wählen Sie die Sprache:**",
         "back": "🔙 Zurück",
         "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
         "send_text": "Senden Sie Text oder Dokument:",
@@ -198,7 +198,7 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
 
     try:
         def generate_gemini():
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('models/gemini-1.5-flash')
             response = model.generate_content(prompt)
             return response.text
 
