@@ -198,7 +198,7 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
 
     try:
         def generate_gemini():
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel('gemini-pro')
             response = model.generate_content(prompt)
             return response.text
 
