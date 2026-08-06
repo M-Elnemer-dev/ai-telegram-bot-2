@@ -173,12 +173,6 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = f"{get_t(new_lang, 'settings_updated')}\n- Mode: {get_t(new_lang, s['mode'])}\n- Language: {LANG_NAMES[new_lang]}\n\n{get_t(new_lang, 'send_text')}"
     await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
-def call_gemini_api(prompt: str) -> str:
-    # استخدام موديل gemini-1.5-flash الرسمي مباشرة
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    response = model.generate_content(prompt)
-    return response.text
-
 async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, text_content: str):
     user_id = update.effective_user.id
     s = user_settings[user_id]
@@ -203,7 +197,12 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
     prompt = f"{instruction}\n\n{text_content}"
 
     try:
-        reply = await asyncio.wait_for(asyncio.to_thread(call_gemini_api, prompt), timeout=25.0)
+        def generate_gemini():
+            model = genai.GenerativeModel('gemini-1.5-flash-8b')
+            response = model.generate_content(prompt)
+            return response.text
+
+        reply = await asyncio.wait_for(asyncio.to_thread(generate_gemini), timeout=25.0)
         
         try:
             await loading_msg.delete()
