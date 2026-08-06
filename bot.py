@@ -173,6 +173,33 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = f"{get_t(new_lang, 'settings_updated')}\n- Mode: {get_t(new_lang, s['mode'])}\n- Language: {LANG_NAMES[new_lang]}\n\n{get_t(new_lang, 'send_text')}"
     await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
+def generate_with_fallback(prompt: str) -> str:
+    # قائمة بالنواذج المعتمدة بالترتيب
+    candidates = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+    
+    for model_name in candidates:
+        try:
+            model = genai.GenerativeModel(model_name)
+            res = model.generate_content(prompt)
+            if res and res.text:
+                return res.text
+        except Exception as e:
+            logger.warning(f"Failed with {model_name}: {e}")
+            continue
+
+    # محاولة أخيرة: البحث عن أي موديل يدعم generateContent
+    try:
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                model = genai.GenerativeModel(m.name)
+                res = model.generate_content(prompt)
+                if res and res.text:
+                    return res.text
+    except Exception as e:
+        logger.error(f"Fallback list_models failed: {e}")
+
+    raise Exception("No valid Gemini model found for this API key.")
+
 async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, text_content: str):
     user_id = update.effective_user.id
     s = user_settings[user_id]
@@ -197,19 +224,7 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
     prompt = f"{instruction}\n\n{text_content}"
 
     try:
-        def generate_gemini():
-            # البحث التلقائي عن أول موديل مدعوم لتوليد المحتوى
-            target_model = 'gemini-pro'
-            for m in genai.list_models():
-                if 'generateContent' in m.supported_generation_methods:
-                    target_model = m.name
-                    break
-            
-            model = genai.GenerativeModel(target_model)
-            response = model.generate_content(prompt)
-            return response.text
-
-        reply = await asyncio.wait_for(asyncio.to_thread(generate_gemini), timeout=25.0)
+        reply = await asyncio.wait_for(asyncio.to_thread(generate_with_fallback, prompt), timeout=25.0)
         
         try:
             await loading_msg.delete()
