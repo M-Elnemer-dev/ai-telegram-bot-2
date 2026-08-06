@@ -4,3 +4,4 @@ python-docx
 lxml
 google-generativeai
 g4f
+g4f
