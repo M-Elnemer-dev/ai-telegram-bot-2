@@ -6,7 +6,7 @@ import asyncio
 from collections import defaultdict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-from g4f.client import Client
+import google.generativeai as genai
 import PyPDF2
 from docx import Document
 
@@ -17,7 +17,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_CHAT_ID")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 user_settings = defaultdict(lambda: {"mode": "quick", "lang": "en"})
 user_histories = defaultdict(list)
@@ -39,7 +42,7 @@ UI_TEXTS = {
         "quick": "⚡ Quick Summary",
         "points": "📌 Key Points",
         "deep": "🧠 Deep Analysis",
-        "error": "⚠️ The AI service took too long or is temporarily busy. Please try again.",
+        "error": "⚠️ An error occurred while generating the response.",
         "unsupported": "⚠️ Unsupported file format.",
         "photo_not_supported": "⚠️ Images are not supported. Please send text or documents only."
     },
@@ -56,7 +59,7 @@ UI_TEXTS = {
         "quick": "⚡ تلخيص سريع",
         "points": "📌 نقاط رئيسية",
         "deep": "🧠 تحليل متعمق",
-        "error": "⚠️ استغرق خادم الذكاء الاصطناعي وقتاً طويلاً أو الخدمة مضغوطة حالياً. حاول مرة أخرى.",
+        "error": "⚠️ حدث خطأ أثناء توليد الرد من الذكاء الاصطناعي.",
         "unsupported": "⚠️ صيغة الملف غير مدعومة.",
         "photo_not_supported": "⚠️ الصور غير مدعومة. يرسل النصوص أو المستندات فقط."
     },
@@ -73,7 +76,7 @@ UI_TEXTS = {
         "quick": "⚡ Résumé Rapide",
         "points": "📌 Points Clés",
         "deep": "🧠 Analyse Approfondie",
-        "error": "⚠️ Le service IA a pris trop de temps. Veuillez réessayer.",
+        "error": "⚠️ Une erreur s'est produite.",
         "unsupported": "⚠️ Format non pris en charge.",
         "photo_not_supported": "⚠️ Images non prises en charge."
     },
@@ -90,7 +93,7 @@ UI_TEXTS = {
         "quick": "⚡ Schnelle Zusammenfassung",
         "points": "📌 Kernpunkte",
         "deep": "🧠 Tiefenanalyse",
-        "error": "⚠️ Der KI-Dienst hat zu lange gedauert. Bitte versuchen Sie es erneut.",
+        "error": "⚠️ Ein Fehler ist aufgetreten.",
         "unsupported": "⚠️ Nicht unterstütztes Format.",
         "photo_not_supported": "⚠️ Bilder nicht unterstützt."
     }
@@ -182,32 +185,24 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
 
     loading_msg = await update.message.reply_text(get_t(lang_code, "loading"), parse_mode="Markdown")
 
-    user_histories[user_id].append({"role": "user", "content": text_content})
-    if len(user_histories[user_id]) > 10:
-        user_histories[user_id] = user_histories[user_id][-10:]
-
     if mode == "quick":
-        system_content = f"You are a professional text summarizer. Provide a quick, clear, and concise summary of the text provided by the user in '{lang_code}' language."
+        instruction = f"Provide a quick, clear, and concise summary of the following text in '{lang_code}' language:"
     elif mode == "points":
-        system_content = f"You are a professional text summarizer. Extract the main key points of the text provided in clear bullet points in '{lang_code}' language."
+        instruction = f"Extract the main key points of the following text in clear bullet points in '{lang_code}' language:"
     elif mode == "deep":
-        system_content = f"You are an expert analytical assistant. Provide a deep, comprehensive, and detailed analysis and summary of the text provided by the user in '{lang_code}' language."
+        instruction = f"Provide a deep, comprehensive, and detailed analysis and summary of the following text in '{lang_code}' language:"
     else:
-        system_content = f"You are a professional text summarizer. Provide a summary in '{lang_code}' language."
+        instruction = f"Provide a summary of the following text in '{lang_code}' language:"
 
-    messages = [{"role": "system", "content": system_content}] + user_histories[user_id]
+    prompt = f"{instruction}\n\n{text_content}"
 
     try:
-        def fetch_ai():
-            client = Client()
-            response = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=messages,
-            )
-            return response.choices[0].message.content if response and response.choices else None
+        def generate_gemini():
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            response = model.generate_content(prompt)
+            return response.text
 
-        # استخدام asyncio.wait_for لضمان عدم التعليق أكثر من 15 ثانية
-        reply = await asyncio.wait_for(asyncio.to_thread(fetch_ai), timeout=15.0)
+        reply = await asyncio.wait_for(asyncio.to_thread(generate_gemini), timeout=20.0)
         
         try:
             await loading_msg.delete()
@@ -215,25 +210,24 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
             pass
         
         if reply:
-            user_histories[user_id].append({"role": "assistant", "content": reply})
             await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
         else:
             await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
             
     except asyncio.TimeoutError:
-        logger.error("AI Request Timeout")
+        logger.error("Gemini Request Timeout")
         try:
             await loading_msg.delete()
         except Exception:
             pass
         await update.message.reply_text(get_t(lang_code, 'error'), reply_markup=get_main_keyboard(user_id))
     except Exception as e:
-        logger.error(f"AI Error: {e}")
+        logger.error(f"Gemini Error: {e}")
         try:
             await loading_msg.delete()
         except Exception:
             pass
-        await update.message.reply_text(get_t(lang_code, 'error'), reply_markup=get_main_keyboard(user_id))
+        await update.message.reply_text(f"{get_t(lang_code, 'error')}\n`{str(e)}`", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
