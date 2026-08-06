@@ -198,11 +198,18 @@ async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, te
 
     try:
         def generate_gemini():
-            model = genai.GenerativeModel('models/gemini-1.5-flash')
+            # البحث التلقائي عن أول موديل مدعوم لتوليد المحتوى
+            target_model = 'gemini-pro'
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    target_model = m.name
+                    break
+            
+            model = genai.GenerativeModel(target_model)
             response = model.generate_content(prompt)
             return response.text
 
-        reply = await asyncio.wait_for(asyncio.to_thread(generate_gemini), timeout=20.0)
+        reply = await asyncio.wait_for(asyncio.to_thread(generate_gemini), timeout=25.0)
         
         try:
             await loading_msg.delete()
