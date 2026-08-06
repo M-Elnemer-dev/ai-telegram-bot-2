@@ -3,10 +3,10 @@ import time
 import logging
 import io
 import asyncio
+import requests
 from collections import defaultdict
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
-import google.generativeai as genai
 import PyPDF2
 from docx import Document
 
@@ -18,9 +18,6 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
 user_settings = defaultdict(lambda: {"mode": "quick", "lang": "en"})
 user_histories = defaultdict(list)
@@ -62,48 +59,12 @@ UI_TEXTS = {
         "error": "⚠️ حدث خطأ أثناء توليد الرد من الذكاء الاصطناعي.",
         "unsupported": "⚠️ صيغة الملف غير مدعومة.",
         "photo_not_supported": "⚠️ الصور غير مدعومة. يرسل النصوص أو المستندات فقط."
-    },
-    "fr": {
-        "welcome": "🤖 **Bienvenue dans le bot de résumé IA!** 📄",
-        "mode_btn": "⚙️ Mode",
-        "lang_btn": "🌐 Langue",
-        "select_mode": "📌 **Sélectionnez le mode de résumé:**",
-        "select_lang": "📌 **Sélectionnez la langue de sortie:**",
-        "back": "🔙 Retour",
-        "settings_updated": "⚙️ **Paramètres mis à jour:**",
-        "send_text": "Envoyez votre texte ou document:",
-        "loading": "⏳ **Traitement en cours...**",
-        "quick": "⚡ Résumé Rapide",
-        "points": "📌 Points Clés",
-        "deep": "🧠 Analyse Approfondie",
-        "error": "⚠️ Une erreur s'est produite.",
-        "unsupported": "⚠️ Format non pris en charge.",
-        "photo_not_supported": "⚠️ Images non prises en charge."
-    },
-    "de": {
-        "welcome": "🤖 **Willkommen beim KI-Zusammenfassungs-Bot!** 📄",
-        "mode_btn": "⚙️ Modus",
-        "lang_btn": "🌐 Sprache",
-        "select_mode": "📌 **Wählen Sie den Modus:**",
-        "select_lang": "📌 **Wählen Sie die Sprache:**",
-        "back": "🔙 Zurück",
-        "settings_updated": "⚙️ **Einstellungen aktualisiert:**",
-        "send_text": "Senden Sie Text oder Dokument:",
-        "loading": "⏳ **Ihre Anfrage wird bearbeitet...**",
-        "quick": "⚡ Schnelle Zusammenfassung",
-        "points": "📌 Kernpunkte",
-        "deep": "🧠 Tiefenanalyse",
-        "error": "⚠️ Ein Fehler ist aufgetreten.",
-        "unsupported": "⚠️ Nicht unterstütztes Format.",
-        "photo_not_supported": "⚠️ Bilder nicht unterstützt."
     }
 }
 
 LANG_NAMES = {
     "en": "🇺🇸 English",
-    "ar": "🇸🇦 العربية",
-    "fr": "🇫🇷 Français",
-    "de": "🇩🇪 Deutsch"
+    "ar": "🇸🇦 العربية"
 }
 
 def get_t(lang: str, key: str) -> str:
@@ -135,7 +96,6 @@ def get_modes_keyboard(lang: str):
 def get_langs_keyboard(lang: str):
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🇸🇦 العربية", callback_data="set_lang_ar"), InlineKeyboardButton("🇺🇸 English", callback_data="set_lang_en")],
-        [InlineKeyboardButton("🇫🇷 Français", callback_data="set_lang_fr"), InlineKeyboardButton("🇩🇪 Deutsch", callback_data="set_lang_de")],
         [InlineKeyboardButton(get_t(lang, "back"), callback_data="back_main")]
     ])
 
@@ -173,66 +133,89 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_text = f"{get_t(new_lang, 'settings_updated')}\n- Mode: {get_t(new_lang, s['mode'])}\n- Language: {LANG_NAMES[new_lang]}\n\n{get_t(new_lang, 'send_text')}"
     await query.message.edit_text(status_text, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
+def query_gemini_direct(prompt: str) -> str:
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise Exception("GEMINI_API_KEY environment variable is missing!")
+
+    # 1. جلب الموديلات المتاحة المباشرة للمفتاح ده
+    list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+    res = requests.get(list_url)
+    if res.status_code != 200:
+        raise Exception(f"API Key Error ({res.status_code}): {res.text}")
+
+    models = res.json().get("models", [])
+    valid_model = None
+    for m in models:
+        name = m.get("name", "")
+        methods = m.get("supportedGenerationMethods", [])
+        if "generateContent" in methods and "flash" in name:
+            valid_model = name
+            break
+            
+    if not valid_model and models:
+        for m in models:
+            if "generateContent" in m.get("supportedGenerationMethods", []):
+                valid_model = m.get("name")
+                break
+
+    if not valid_model:
+        valid_model = "models/gemini-1.5-flash"
+
+    # 2. إرسال الطلب المباشر للموديل اللي اتأكدنا إنه شغال
+    generate_url = f"https://generativelanguage.googleapis.com/v1beta/{valid_model}:generateContent?key={key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}]
+    }
+    
+    resp = requests.post(generate_url, json=payload, headers={"Content-Type": "application/json"})
+    if resp.status_code == 200:
+        data = resp.json()
+        try:
+            return data['candidates'][0]['content']['parts'][0]['text']
+        except Exception:
+            raise Exception(f"Unexpected response format: {data}")
+    else:
+        raise Exception(f"Error {resp.status_code}: {resp.text}")
+
 async def process_content(update: Update, context: ContextTypes.DEFAULT_TYPE, text_content: str):
     user_id = update.effective_user.id
     s = user_settings[user_id]
     lang_code = s["lang"]
     mode = s["mode"]
 
-    if is_rate_limited(user_id):
-        await update.message.reply_text("⚠️ Rate limit reached.")
-        return
-
     loading_msg = await update.message.reply_text(get_t(lang_code, "loading"), parse_mode="Markdown")
 
     if mode == "quick":
-        instruction = f"Provide a quick, clear, and concise summary of the following text in '{lang_code}' language:"
+        instruction = f"Provide a quick, clear summary in '{lang_code}':"
     elif mode == "points":
-        instruction = f"Extract the main key points of the following text in clear bullet points in '{lang_code}' language:"
-    elif mode == "deep":
-        instruction = f"Provide a deep, comprehensive, and detailed analysis and summary of the following text in '{lang_code}' language:"
+        instruction = f"Extract key points in bullet points in '{lang_code}':"
     else:
-        instruction = f"Provide a summary of the following text in '{lang_code}' language:"
+        instruction = f"Provide a deep detailed summary in '{lang_code}':"
 
     prompt = f"{instruction}\n\n{text_content}"
 
     try:
-        def generate_gemini():
-            model = genai.GenerativeModel('gemini-1.5-flash-8b')
-            response = model.generate_content(prompt)
-            return response.text
-
-        reply = await asyncio.wait_for(asyncio.to_thread(generate_gemini), timeout=25.0)
+        reply = await asyncio.to_thread(query_gemini_direct, prompt)
         
         try:
             await loading_msg.delete()
         except Exception:
             pass
         
-        if reply:
-            await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
-        else:
-            await update.message.reply_text("⚠️ No response generated.", reply_markup=get_main_keyboard(user_id))
+        await update.message.reply_text(reply, reply_markup=get_main_keyboard(user_id))
             
-    except asyncio.TimeoutError:
-        logger.error("Gemini Request Timeout")
-        try:
-            await loading_msg.delete()
-        except Exception:
-            pass
-        await update.message.reply_text(get_t(lang_code, 'error'), reply_markup=get_main_keyboard(user_id))
     except Exception as e:
         logger.error(f"Gemini Error: {e}")
         try:
             await loading_msg.delete()
         except Exception:
             pass
-        await update.message.reply_text(f"{get_t(lang_code, 'error')}\n`{str(e)}`", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
+        await update.message.reply_text(f"{get_t(lang_code, 'error')}\n\n`{str(e)}`", reply_markup=get_main_keyboard(user_id), parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text:
-        await process_content(update, context, text)
+    if update.message.text:
+        await process_content(update, context, update.message.text)
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -249,7 +232,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_io.seek(0)
         
         extracted_text = ""
-        
         if file_name.endswith('.pdf'):
             reader = PyPDF2.PdfReader(file_io)
             for page in reader.pages:
@@ -270,42 +252,24 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if extracted_text.strip():
             await process_content(update, context, extracted_text[:4000])
         else:
-            await update.message.reply_text("⚠️ Could not extract text from the file.", reply_markup=get_main_keyboard(user_id))
+            await update.message.reply_text("⚠️ Could not extract text from file.", reply_markup=get_main_keyboard(user_id))
             
     except Exception as e:
         logger.error(f"File reading error: {e}")
         await update.message.reply_text(get_t(lang_code, 'error'), reply_markup=get_main_keyboard(user_id))
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    s = user_settings[user_id]
-    lang_code = s["lang"]
-    await update.message.reply_text(get_t(lang_code, "photo_not_supported"), reply_markup=get_main_keyboard(user_id))
-
-def is_rate_limited(user_id: int) -> bool:
-    current_time = time.time()
-    user_message_times[user_id] = [
-        t for t in user_message_times[user_id] if current_time - t < RATE_LIMIT_WINDOW
-    ]
-    if len(user_message_times[user_id]) >= RATE_LIMIT_COUNT:
-        return True
-    user_message_times[user_id].append(current_time)
-    return False
-
 def main():
     if not TELEGRAM_TOKEN:
-        logger.critical("TELEGRAM_BOT_TOKEN environment variable is missing or empty!")
+        logger.critical("TELEGRAM_BOT_TOKEN environment variable is missing!")
         return
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CallbackQueryHandler(button_click))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     app.run_polling()
 
-if __name__ == main.__globals__.get('__name__', '__main__'):
+if __name__ == '__main__':
     main()
